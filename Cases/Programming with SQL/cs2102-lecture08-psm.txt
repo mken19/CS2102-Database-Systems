@@ -1,0 +1,672 @@
+--
+-- Example code and queries from the Lecture 8 slides
+--
+-- There is no need to import a separate database; the single table and
+-- the toy data are created and inserted using DDL & DML commands below.
+--
+
+
+
+DROP FUNCTION add;
+CREATE OR REPLACE FUNCTION add (IN a INT, IN b INT)
+RETURNS INTEGER AS
+$$
+DECLARE
+    sum INTEGER;
+    d DATE;
+BEGIN
+    sum := a + b;
+    RETURN sum;
+END;
+$$
+LANGUAGE plpgsql;
+
+SELECT add(2, 3);
+
+
+
+DROP FUNCTION add;
+CREATE OR REPLACE FUNCTION add (IN a INTEGER, IN b INT, OUT sum INT)
+AS
+$$
+BEGIN
+    sum := a + b;
+END;
+$$
+LANGUAGE plpgsql;
+
+SELECT sum FROM add(2, 3);
+
+
+
+
+DROP FUNCTION addsub;
+CREATE OR REPLACE FUNCTION addsub (IN a INT, IN b INT, OUT sum INT, OUT diff INT)
+RETURNS RECORD
+LANGUAGE plpgsql
+AS
+$$
+BEGIN
+    sum  := a + b;
+    diff := a - b;
+END;
+$$;
+
+SELECT * FROM addsub(2, 3);
+
+
+--
+-- Create example data (1 table with 10 rows)
+--
+DROP TABLE students CASCADE;
+CREATE TABLE students (
+ id INT PRIMARY KEY,
+ name VARCHAR(128),
+ points INTEGER,
+ graduated BOOLEAN
+);
+
+INSERT INTO students VALUES 
+ (1, 'Bob', 94, TRUE), 
+ (2, 'Eve', 82, FALSE), 
+ (3, 'Sam', 65, FALSE),
+ (4, 'Liz', 86, TRUE), 
+ (5, 'Tom', 90, TRUE),
+ (6, 'Sue', 94, FALSE), 
+ (7, 'Zac', 75, FALSE), 
+ (8, 'Ida', 84, TRUE),
+ (9, 'Leo', 91, FALSE), 
+ (10, 'Pam', 70, FALSE);
+
+
+
+
+
+DROP FUNCTION clean_students();
+CREATE FUNCTION clean_students() 
+RETURNS INTEGER AS
+$$
+    -- Delete all students
+    -- Who have graduated
+    DELETE FROM students
+    WHERE graduated = TRUE;
+    -- Return remaining student count
+    SELECT COUNT(*) AS num_students
+    FROM students;
+$$
+LANGUAGE sql;
+
+SELECT clean_students();
+
+
+
+
+--
+-- CORRECT
+--
+DROP FUNCTION get_student;
+CREATE OR REPLACE FUNCTION get_student(sid INT) 
+RETURNS SETOF students AS
+$$
+    SELECT * FROM students WHERE id <> sid;
+$$ LANGUAGE SQL;
+
+SELECT * FROM get_student(1) AS t1;
+
+
+
+--
+-- WRONG: This would return only 1 student!!!
+--
+DROP FUNCTION get_student;
+CREATE OR REPLACE FUNCTION get_student(sid INT) 
+RETURNS students AS
+$$
+    SELECT * FROM students WHERE id <> sid;
+$$ LANGUAGE SQL;
+
+SELECT * FROM get_student(1) AS t1;
+
+
+--
+-- WRONG: Return value must match the schema of "students"!
+--
+DROP FUNCTION get_student;
+CREATE OR REPLACE FUNCTION get_student(sid INT) 
+RETURNS SETOF students AS
+$$
+    SELECT name FROM students WHERE id <> sid;
+$$ LANGUAGE SQL;
+
+SELECT * FROM get_student(1) AS t1;
+
+
+--
+-- WRONG!!! ("If there is only one output parameter, write that parameter's type instead of record.")
+--
+DROP FUNCTION get_student;
+CREATE OR REPLACE FUNCTION get_student(sid INT, OUT sum INT) 
+RETURNS SETOF RECORD AS
+$$
+    SELECT 4 FROM tab;
+$$ 
+LANGUAGE SQL;
+
+SELECT * FROM get_student(1) AS t1;
+
+
+--
+-- CORRECT!
+--
+DROP FUNCTION get_student;
+CREATE OR REPLACE FUNCTION get_student(sid INT, OUT sum INT) 
+RETURNS SETOF INT AS
+$$
+    SELECT 4 FROM tab;
+$$ 
+LANGUAGE SQL;
+
+SELECT * FROM get_student(1) AS t1;
+
+
+DROP FUNCTION get_student;
+CREATE OR REPLACE FUNCTION get_student (x INT)
+RETURNS TABLE(sum INT) AS
+$$
+    SELECT 23 FROM tab;
+$$
+LANGUAGE SQL;
+
+SELECT * FROM get_student(1) AS t1;
+
+
+
+
+
+DROP FUNCTION get_mark();
+CREATE OR REPLACE FUNCTION get_mark(sid INT, bonus INT DEFAULT 0) 
+RETURNS INTEGER AS
+$$
+DECLARE
+    mark INTEGER;
+BEGIN
+    SELECT points INTO mark FROM students WHERE id = sid;
+    mark := mark + bonus;
+    RETURN mark;
+END;
+$$
+LANGUAGE plpgsql;
+
+SELECT get_mark(3, 10);
+
+
+
+--
+-- WRONG! Final statement returns too few columns.
+--
+CREATE OR REPLACE FUNCTION get_top_student()
+RETURNS students AS
+$$
+    SELECT id, name, points 
+    FROM students
+    ORDER BY points DESC
+    LIMIT 1;
+$$
+LANGUAGE sql;
+
+SELECT id, name, points 
+FROM get_top_student();
+
+
+
+CREATE OR REPLACE FUNCTION get_top_student()
+RETURNS students AS
+$$
+    SELECT * 
+    FROM students
+    ORDER BY points DESC
+    LIMIT 1;
+$$
+LANGUAGE sql;
+
+SELECT id, name, points 
+FROM get_top_student();
+
+
+
+CREATE OR REPLACE FUNCTION get_enrolled_students()
+RETURNS SETOF students AS
+$$
+   SELECT *
+   FROM students
+   WHERE graduated = FALSE;
+$$
+LANGUAGE sql;
+
+SELECT id, name 
+FROM get_enrolled_students();
+
+
+
+DROP FUNCTION get_top_student_count;
+CREATE OR REPLACE FUNCTION get_top_student_count
+    (OUT points INT, OUT cnt INT)
+RETURNS RECORD AS
+$$
+   SELECT points, COUNT(*)
+   FROM students
+   WHERE points = (SELECT MAX(points)
+                   FROM students)
+   GROUP BY points;
+$$
+LANGUAGE sql;
+
+SELECT points, cnt
+FROM get_top_student_count();
+
+
+
+--
+-- WRONG!
+--
+DROP FUNCTION get_group_counts;
+CREATE OR REPLACE FUNCTION get_group_counts
+    (OUT graduated BOOLEAN, OUT cnt INT)
+RETURNS RECORD AS
+$$
+   SELECT graduated, COUNT(*)
+   FROM students
+   GROUP BY graduated;
+$$
+LANGUAGE sql;
+
+SELECT graduated, cnt
+FROM get_group_counts();
+
+
+
+
+DROP FUNCTION get_group_counts;
+CREATE OR REPLACE FUNCTION get_group_counts
+    (OUT graduated BOOLEAN, OUT cnt INT)
+RETURNS SETOF RECORD AS
+$$
+   SELECT graduated, COUNT(*)
+   FROM students
+   GROUP BY graduated;
+$$
+LANGUAGE sql;
+
+SELECT graduated, cnt
+FROM get_group_counts();
+
+
+
+DROP FUNCTION get_group_counts;
+CREATE OR REPLACE FUNCTION get_group_counts()
+RETURNS TABLE(graduated BOOLEAN, cnt INT) AS
+$$
+   SELECT graduated, COUNT(*)
+   FROM students
+   GROUP BY graduated;
+$$
+LANGUAGE sql;
+
+SELECT graduated, cnt
+FROM get_group_counts();
+
+
+
+DROP FUNCTION get_group_counts;
+CREATE OR REPLACE FUNCTION get_group_counts()
+RETURNS TABLE(graduated BOOLEAN) AS
+$$
+   SELECT graduated
+   FROM students
+   GROUP BY graduated;
+$$
+LANGUAGE sql;
+
+SELECT * FROM get_group_counts();
+
+
+
+
+CREATE OR REPLACE FUNCTION add_bonus
+    (sid INT, amount INT)
+RETURNS VOID AS
+$$
+    UPDATE students
+    SET points = points + amount
+    WHERE id = sid;
+$$
+LANGUAGE sql;
+
+
+SELECT add_bonus(10, 0);
+
+PERFORM add_bonus(10, 0);
+
+
+
+
+CREATE OR REPLACE PROCEDURE add_bonus_proc
+    (sid INT, amount INT)
+AS
+$$
+    UPDATE students
+    SET points = points + amount
+    WHERE id = sid;
+$$
+LANGUAGE sql;
+
+CALL add_bonus_proc(10, 0);
+
+
+
+DROP PROCEDURE add_proc;
+CREATE OR REPLACE PROCEDURE add_proc (IN a INTEGER, IN b INT, OUT sum INT)
+AS
+$$
+BEGIN
+    sum := a + b;
+END;
+$$
+LANGUAGE plpgsql;
+
+CALL add_proc(2, 3);
+
+
+
+DO
+$$
+DECLARE
+    sum INT;
+BEGIN
+    CALL add_proc(2, 3, sum);
+    RAISE NOTICE 'Sum: %', sum;
+END
+$$;
+
+
+
+
+DROP FUNCTION compute_points_gaps;
+CREATE OR REPLACE FUNCTION compute_points_gaps()
+RETURNS TABLE(name TEXT, points INT, gap INT) AS
+$$
+DECLARE
+    s RECORD; prev INT;
+BEGIN
+    prev := -1;
+    FOR s in SELECT * FROM students ORDER BY points DESC
+    LOOP
+        name := s.name;
+        points := s.points;
+        IF prev >= 0 THEN 
+            gap := prev - s.points;
+        ELSE 
+            gap := 0;
+        END IF;
+        RETURN NEXT;
+        prev := s.points;
+    END LOOP;
+END;
+$$
+LANGUAGE plpgsql;
+
+
+SELECT name, gap FROM compute_points_gaps();
+
+
+
+
+DROP FUNCTION test;
+CREATE OR REPLACE FUNCTION test()
+RETURNS TABLE(name TEXT, points INT, gap INT) AS
+$$
+DECLARE
+    c CURSOR FOR (SELECT * FROM students ORDER BY points DESC);
+    s RECORD; prev INT;
+BEGIN
+    prev := -1;
+    OPEN c;
+    LOOP
+        FETCH c INTO s;
+        EXIT WHEN NOT FOUND;
+        IF prev >= 0 THEN gap := prev - s.points;
+        ELSE gap := 0;
+        END IF;
+        RAISE NOTICE '% (% points, % diff)', s.name, s.points, gap;
+        name := s.name;
+        points := s.points;
+        RETURN NEXT;
+        prev := s.points;
+    END LOOP;
+    CLOSE c;
+END;
+$$
+LANGUAGE plpgsql;
+
+
+SELECT name, gap FROM test();
+
+
+
+
+DROP PROCEDURE test;
+CREATE OR REPLACE PROCEDURE test() AS
+$$
+DECLARE
+    c CURSOR FOR (SELECT * FROM students ORDER BY points DESC);
+    s RECORD; prev INT;
+BEGIN
+    OPEN c;
+    -- FETCH c INTO s;
+    -- FETCH NEXT IN c INTO s;
+    FETCH PRIOR IN c INTO s;
+    -- FETCH ABSOLUTE 3 IN c INTO s;
+    -- MOVE ABSOLUTE 3 IN c;
+    -- FETCH RELATIVE -1 IN c INTO s;
+    RAISE NOTICE '% (% points)', s.name, s.points;
+    CLOSE c;
+END;
+$$
+LANGUAGE plpgsql;
+
+
+CALL test();
+
+
+
+
+--
+-- CORRECT
+--
+DROP FUNCTION pagination;
+CREATE OR REPLACE FUNCTION pagination (start INT, num INT)
+RETURNS SETOF students AS
+$$
+DECLARE
+    c SCROLL CURSOR FOR (SELECT * FROM students ORDER BY points DESC);
+    s RECORD; cnt INT;
+BEGIN
+    OPEN c;
+    MOVE ABSOLUTE start IN c;
+    cnt := 0;
+    LOOP
+        EXIT WHEN cnt >= num;
+        FETCH c INTO s;
+        EXIT WHEN NOT FOUND;
+        RETURN NEXT s;
+        cnt := cnt + 1;
+    END LOOP;
+    CLOSE c;
+END;
+$$
+LANGUAGE plpgsql;
+
+SELECT * FROM pagination(2, 3);
+
+
+
+
+
+
+SELECT *
+FROM students
+ORDER BY points DESC
+LIMIT 3 OFFSET 2;
+
+
+DROP FUNCTION pagination;
+CREATE OR REPLACE FUNCTION pagination(start INT, num INT) 
+RETURNS SETOF students AS
+$$
+   SELECT * FROM students
+   ORDER BY points DESC
+   LIMIT num OFFSET start;
+$$ LANGUAGE SQL;
+
+SELECT * FROM pagination(2, 3);
+
+
+
+
+
+
+
+
+CREATE OR REPLACE PROCEDURE add_bonus_proc
+    (sid INT, amount INT)
+AS
+$$
+BEGIN
+    IF amount < 0 THEN
+        RAISE EXCEPTION 'Bonus cannot be negative!' USING ERRCODE = 'NEGATIVE_BONUS';    
+    END IF;
+    UPDATE students
+    SET points = points + amount
+    WHERE id = sid;
+END;
+$$
+LANGUAGE plpgsql;
+
+CALL add_bonus_proc(10, -1);
+
+
+
+
+
+DROP FUNCTION sum_n;
+CREATE OR REPLACE FUNCTION sum_n(IN n INT)
+RETURNS INTEGER AS
+$$
+DECLARE
+    sum INT;
+BEGIN
+    sum := 0;
+    IF n <= 0 THEN
+        RETURN sum;
+    END IF;
+    FOR val in 1..n LOOP
+        sum := sum + val;
+    END LOOP;
+    RETURN sum;
+END;
+$$
+LANGUAGE plpgsql;
+
+
+SELECT sum_n(10);
+
+
+
+DROP FUNCTION sum_n;
+CREATE OR REPLACE FUNCTION sum_n(IN n INT)
+RETURNS INTEGER AS
+$$
+DECLARE
+    sum INT;
+BEGIN
+    sum := 0;
+    IF n <= 0 THEN
+        RAISE EXCEPTION 'n<0 bad!';
+    END IF;
+    FOR val in 1..n LOOP
+        sum := sum + val;
+    END LOOP;
+    RETURN sum;
+END;
+$$
+LANGUAGE plpgsql;
+
+
+SELECT sum_n(10);
+
+
+
+
+
+DROP FUNCTION median_points;
+CREATE OR REPLACE FUNCTION median_points()
+RETURNS NUMERIC AS
+$$
+DECLARE
+    c CURSOR FOR (SELECT * FROM students ORDER BY points DESC);
+    s1 RECORD; s2 RECORD; num_students INT;
+BEGIN
+    OPEN c;
+    SELECT COUNT(*) INTO num_students FROM students;
+    IF num_students%2 = 1 THEN
+        FETCH ABSOLUTE (num_students+1)/2 FROM c INTO s1;
+        RETURN s1.points;
+    ELSE
+        FETCH ABSOLUTE num_students/2 FROM c INTO s1;
+        -- FETCH NEXT FROM c INTO s2;
+        -- FETCH c INTO s2;
+        -- FETCH RELATIVE 1 FROM c INTO s2;
+        FETCH ABSOLUTE num_students/2+1 FROM c INTO s2;
+        RETURN (s1.points+s2.points)/2;    
+    END IF;
+    CLOSE c;
+END;
+$$
+LANGUAGE plpgsql;
+
+SELECT median_points();
+
+
+
+
+DROP FUNCTION median_points;
+CREATE OR REPLACE FUNCTION median_points(IN has_graduated BOOLEAN)
+RETURNS NUMERIC AS
+$$
+DECLARE
+    c CURSOR (grad BOOLEAN) FOR (SELECT * FROM students 
+                                 WHERE graduated = grad
+                                 ORDER BY points DESC);
+    s1 RECORD; s2 RECORD; num_students INT;
+BEGIN
+    OPEN c(has_graduated);
+    SELECT COUNT(*) INTO num_students 
+    FROM students WHERE graduated = has_graduated;
+    IF num_students%2 = 1 THEN
+        FETCH ABSOLUTE (num_students+1)/2 FROM c INTO s1;
+        RETURN s1.points;
+    ELSE
+        FETCH ABSOLUTE num_students/2 FROM c INTO s1;
+        FETCH NEXT FROM c INTO s2;
+        RETURN (s1.points+s2.points)/2;    
+    END IF;
+    CLOSE c;
+END;
+$$
+LANGUAGE plpgsql;
+
+SELECT median_points(TRUE);
+
+
+
+

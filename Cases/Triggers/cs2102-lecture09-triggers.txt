@@ -1,0 +1,461 @@
+https://www.postgresql.org/docs/9.1/trigger-definition.html
+https://www.postgresql.org/docs/9.1/trigger-definition.html
+https://www.postgresql.org/docs/9.1/trigger-definition.html
+
+* The trigger function must be defined before the trigger itself can be created.
+
+* The trigger function must be declared as a function taking no arguments and returning type trigger. (The trigger function receives its input through a specially-passed TriggerData structure, not in the form of ordinary function arguments.)
+
+* When a PL/pgSQL function is called as a trigger, several special variables are created automatically in the top-level block. They are: [...] NEW, [...] OLD [...]
+
+* The same trigger function can be used for multiple triggers.
+
+* Trigger functions invoked by per-statement triggers should always return NULL. 
+
+* If more than one trigger is defined for the same event on the same relation, the triggers will be fired in alphabetical order by trigger name.
+
+
+
+
+DROP TABLE students CASCADE;
+CREATE TABLE students (
+ id SERIAL PRIMARY KEY,
+ name TEXT NOT NULL,
+ points INTEGER DEFAULT 0,
+ graduated BOOLEAN DEFAULT FALSE
+);
+
+INSERT INTO students (name, points, graduated) VALUES 
+ ('Bob', 94, TRUE), 
+ ('Eve', 82, FALSE), 
+ ('Sam', 65, FALSE),
+ ('Liz', 86, TRUE), 
+ ('Tom', 90, TRUE),
+ ('Sue', 94, FALSE), 
+ ('Zac', 82, FALSE), 
+ ('Ida', 82, TRUE),
+ ('Leo', 91, FALSE), 
+ ('Pam', 70, FALSE);
+
+
+
+DROP TABLE basic_logs CASCADE;
+CREATE TABLE basic_logs (
+ student INTEGER NOT NULL,
+ created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+
+
+DROP TABLE advanced_logs CASCADE;
+CREATE TABLE advanced_logs (
+ student INTEGER NOT NULL,
+ operation TEXT NOT NULL,
+ points_old INTEGER,
+ points_new INTEGER,
+ created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+
+
+
+
+
+DROP PROCEDURE enter_student;
+CREATE OR REPLACE PROCEDURE enter_student
+  (sname TEXT, spoints INTEGER)
+AS 
+$$
+DECLARE
+    new_id INTEGER;
+BEGIN
+    INSERT INTO students (name, points) VALUES (sname, spoints)
+      RETURNING id INTO new_id;
+    INSERT INTO basic_logs (student) VALUES (new_id);
+END;
+$$ LANGUAGE plpgsql;
+
+
+CALL enter_student('Ari', 80);
+
+
+DROP TRIGGER on_student_added ON students;
+CREATE TRIGGER on_student_added
+AFTER INSERT ON students
+FOR EACH ROW 
+EXECUTE FUNCTION remove_student();
+
+
+
+DROP FUNCTION remove_student;
+CREATE OR REPLACE FUNCTION remove_student()
+RETURNS TRIGGER AS 
+$$
+BEGIN
+    DELETE FROM studentS WHERE id = NEW.id;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+INSERT INTO students (name, points) VALUES ('xxx', 80);
+
+
+
+
+
+DROP TRIGGER on_student_entered ON students;
+CREATE TRIGGER on_student_entered
+AFTER INSERT ON students
+--BEFORE INSERT ON students
+FOR EACH ROW 
+EXECUTE FUNCTION log_student_basic();
+
+
+DROP FUNCTION log_student_basic;
+CREATE OR REPLACE FUNCTION log_student_basic()
+RETURNS TRIGGER AS 
+$$
+BEGIN
+    RAISE NOTICE 'OLD.id: %', OLD.id;
+    INSERT INTO basic_logs (student) VALUES (NEW.id);
+    -- RETURN NEW;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+
+INSERT INTO students (name, points) VALUES ('Ari', 80);
+
+
+
+
+
+
+
+DROP TRIGGER on_student_modified_advanced ON students;
+CREATE TRIGGER on_student_modified_advanced
+AFTER INSERT OR DELETE OR UPDATE ON students
+FOR EACH ROW 
+EXECUTE FUNCTION log_student_advanced();
+
+DROP TRIGGER on_student_updated_advanced ON students;
+CREATE TRIGGER on_student_updated_advanced
+AFTER UPDATE ON students
+FOR EACH ROW WHEN (NEW.points <> OLD.points)
+EXECUTE FUNCTION log_student_advanced();
+
+
+
+
+DROP FUNCTION log_student_advanced;
+CREATE OR REPLACE FUNCTION log_student_advanced()
+RETURNS TRIGGER AS 
+$$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        INSERT INTO advanced_logs VALUES (NEW.id, TG_OP, NULL, NEW.points, DEFAULT);
+        RETURN NEW;
+    ELSIF (TG_OP = 'DELETE') THEN
+        INSERT INTO advanced_logs VALUES (OLD.id, TG_OP, OLD.points, NULL, DEFAULT);
+        RETURN OLD;
+    ELSIF (TG_OP = 'UPDATE') THEN
+        INSERT INTO advanced_logs VALUES (NEW.id, TG_OP, OLD.points, NEW.points, DEFAULT);
+        RETURN NEW;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+
+INSERT INTO students (name, points) VALUES ('Ari', 80);
+
+UPDATE students SET points = 92 WHERE id = 1;
+
+UPDATE students SET points = 75 WHERE id = 7;
+
+DELETE FROM students WHERE id = 4;
+
+
+
+
+
+
+CREATE TRIGGER on_insert_A
+AFTER INSERT ON table_A
+FOR EACH ROW
+EXECUTE FUNCTION insert_into_B();
+
+CREATE OR REPLACE FUNCTION insert_into_B()
+RETURNS TRIGGER AS
+$$
+BEGIN
+    INSERT INTO table_B (0);
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+
+
+CREATE TRIGGER on_insert_B
+AFTER INSERT ON table_B
+FOR EACH ROW
+EXECUTE FUNCTION insert_into_A();
+
+CREATE OR REPLACE FUNCTION insert_into_A()
+RETURNS TRIGGER AS
+$$
+BEGIN
+    INSERT INTO table_A (0);
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+
+
+
+
+
+CREATE TRIGGER on_tableA_insert AFTER INSERT ON tableA [...] EXECUTE FUNCTION insert_somthing_in_tableB();
+CREATE TRIGGER on_tableB_insert AFTER INSERT ON tableB [...] EXECUTE FUNCTION insert_somthing_in_tableA();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+DROP TRIGGER on_student_entered ON students;
+CREATE TRIGGER on_student_entered
+BEFORE INSERT OR UPDATE ON students
+FOR EACH ROW 
+EXECUTE FUNCTION help_adi_cheat();
+
+
+DROP FUNCTION help_adi_cheat;
+CREATE OR REPLACE FUNCTION help_adi_cheat()
+RETURNS TRIGGER AS 
+$$
+BEGIN
+    IF NEW.name = 'Adi' THEN
+        NEW.points := 100;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+
+
+
+
+DROP FUNCTION help_adi_cheat;
+CREATE OR REPLACE FUNCTION help_adi_cheat()
+RETURNS TRIGGER AS 
+$$
+DECLARE
+    s RECORD; prev INT;
+BEGIN
+    IF NEW.name = 'Adi' THEN
+        s := NEW;
+        s.points := 100;
+    END IF;
+    RETURN s;
+END;
+$$ LANGUAGE plpgsql;
+
+
+
+
+DROP FUNCTION help_adi_cheat;
+CREATE OR REPLACE FUNCTION help_adi_cheat()
+RETURNS TRIGGER AS 
+$$
+BEGIN
+    IF NEW.name = 'Adi' THEN
+        OLD := NEW;
+        OLD.points := 100;
+    END IF;
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+
+
+
+
+
+INSERT INTO students (name, points) VALUES ('Adi', 80);
+
+UPDATE students SET points = 0;
+
+
+
+--
+-- INSTEAD OF triggers
+--
+
+
+CREATE OR REPLACE VIEW students_view AS
+SELECT name, points FROM students;
+
+DELETE FROM students_view WHERE name = 'Bob';
+
+INSERT INTO students_view VALUES ('Adi', 80);
+
+UPDATE students_view SET points = points + 3;
+
+
+CREATE OR REPLACE VIEW students_view AS
+SELECT name, points FROM students
+WHERE points >= 75;
+
+DELETE FROM students_view WHERE name = 'Adi';
+
+
+INSERT INTO students_view VALUES ('Adi', 70);
+
+
+
+
+
+
+CREATE OR REPLACE VIEW point_groups AS
+    SELECT points, COUNT(*) AS num_students
+    FROM students
+    GROUP BY points;
+
+
+DROP FUNCTION update_student_points;
+CREATE OR REPLACE FUNCTION update_student_points()
+RETURNS TRIGGER AS
+$$
+BEGIN
+    UPDATE students SET points = NEW.points WHERE points = OLD.points;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE TRIGGER on_point_groups_updated
+INSTEAD OF UPDATE ON point_groups
+FOR EACH ROW
+EXECUTE FUNCTION update_student_points();
+
+
+
+UPDATE point_groups SET points = points + 3;
+
+
+
+
+
+
+
+DROP TABLE accounts;
+CREATE TABLE accounts (
+ id INTEGER PRIMARY KEY,
+ name TEXT NOT NULL,
+ balance INTEGER DEFAULT 0
+);
+
+
+INSERT INTO accounts VALUES 
+ (10, 'Adi', 100), 
+ (11, 'Adi', 80);
+
+
+
+CREATE OR REPLACE FUNCTION check_balance()
+RETURNS TRIGGER AS
+$$
+DECLARE
+    total_balance INT;
+BEGIN
+    SELECT SUM(balance) INTO total_balance
+    FROM accounts WHERE name = NEW.name;
+    IF total_balance < 150 THEN
+        RAISE EXCEPTION 'Total balance must be >= 150';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+
+
+DROP TRIGGER on_account_modified ON accounts;
+CREATE TRIGGER on_account_modified
+AFTER INSERT OR DELETE OR UPDATE ON accounts
+FOR EACH ROW
+EXECUTE FUNCTION check_balance();
+
+
+
+DROP TRIGGER on_account_modified ON accounts;
+CREATE CONSTRAINT TRIGGER on_account_modified
+AFTER INSERT OR DELETE OR UPDATE ON accounts
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW
+EXECUTE FUNCTION check_balance();
+
+BEGIN TRANSACTION;
+UPDATE accounts SET balance = balance - 50 WHERE id = 10;
+UPDATE accounts SET balance = balance + 50 WHERE id = 11;
+END TRANSACTION;
+
+
+
+DROP TRIGGER on_account_modified ON accounts;
+CREATE CONSTRAINT TRIGGER on_account_modified
+AFTER INSERT OR DELETE OR UPDATE ON accounts
+DEFERRABLE INITIALLY IMMEDIATE
+FOR EACH ROW
+EXECUTE FUNCTION check_balance();
+
+BEGIN TRANSACTION;
+SET CONSTRAINTS on_account_modified DEFERRED;
+UPDATE accounts SET balance = balance - 50 WHERE id = 10;
+UPDATE accounts SET balance = balance + 50 WHERE id = 11;
+END TRANSACTION;
+
+
+
+
+
+
+DROP TABLE employees;
+CREATE TABLE employees (
+ eid INT PRIMARY KEY,
+ name TEXT NOT NULL,
+ salary DECIMAL(12,2) NOT NULL DEFAULT 0,
+ CONSTRAINT check_pos_salary CHECK (salary >= 0)
+);
+
+INSERT INTO employees VALUES (1, 'Adi', 1000.0);
+
+
+CREATE OR REPLACE FUNCTION check_valid_salary()
+RETURNS TRIGGER AS
+$$
+BEGIN
+    IF OLD.salary > NEW.salary THEN
+        RAISE EXCEPTION 'Salary may not decrease!';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+
+CREATE TRIGGER on_employee_updated
+BEFORE UPDATE ON employees
+FOR EACH ROW
+EXECUTE FUNCTION check_valid_salary();
+
+
+UPDATE employees SET salary = 800.0 WHERE eid = 1;
